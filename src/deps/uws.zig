@@ -35,7 +35,8 @@ pub const CloseCode = enum(i32) {
     failure = 1,
 };
 
-const BoringSSL = bun.BoringSSL;
+const BoringSSL = bun.BoringSSL.c;
+
 fn NativeSocketHandleType(comptime ssl: bool) type {
     if (ssl) {
         return BoringSSL.SSL;
@@ -116,15 +117,15 @@ pub const UpgradedDuplex = struct {
     const WrapperType = SSLWrapper(*UpgradedDuplex);
 
     wrapper: ?WrapperType,
-    origin: JSC.Strong = .{}, // any duplex
+    origin: JSC.Strong = .empty, // any duplex
+    global: ?*JSC.JSGlobalObject = null,
     ssl_error: CertError = .{},
     vm: *JSC.VirtualMachine,
     handlers: Handlers,
-
-    onDataCallback: JSC.Strong = .{},
-    onEndCallback: JSC.Strong = .{},
-    onWritableCallback: JSC.Strong = .{},
-    onCloseCallback: JSC.Strong = .{},
+    onDataCallback: JSC.Strong = .empty,
+    onEndCallback: JSC.Strong = .empty,
+    onWritableCallback: JSC.Strong = .empty,
+    onCloseCallback: JSC.Strong = .empty,
     event_loop_timer: EventLoopTimer = .{
         .next = .{},
         .tag = .UpgradedDuplex,
@@ -179,7 +180,7 @@ pub const UpgradedDuplex = struct {
             return;
         }
         if (this.origin.get()) |duplex| {
-            const globalThis = this.origin.globalThis.?;
+            const globalThis = this.global.?;
             const writeOrEnd = if (msg_more) duplex.getFunction(globalThis, "write") catch return orelse return else duplex.getFunction(globalThis, "end") catch return orelse return;
             if (data) |data_| {
                 const buffer = JSC.BinaryType.toJS(.Buffer, data_, globalThis);
@@ -336,7 +337,8 @@ pub const UpgradedDuplex = struct {
     ) UpgradedDuplex {
         return UpgradedDuplex{
             .vm = globalThis.bunVM(),
-            .origin = JSC.Strong.create(origin, globalThis),
+            .origin = .create(origin, globalThis),
+            .global = globalThis,
             .wrapper = null,
             .handlers = handlers,
         };
@@ -1769,7 +1771,7 @@ pub fn NewSocketHandler(comptime is_ssl: bool) type {
         ///
         /// # Returns
         /// This function returns a slice of the buffer on success, or null on failure.
-        pub fn localAddressBinary(this: ThisSocket, buf: []u8) ?[]const u8 {
+        pub fn localAddress(this: ThisSocket, buf: []u8) ?[]const u8 {
             switch (this.socket) {
                 .connected => |socket| {
                     var length: i32 = @intCast(buf.len);
@@ -1787,39 +1789,6 @@ pub fn NewSocketHandler(comptime is_ssl: bool) type {
                 },
                 .pipe, .upgradedDuplex, .connecting, .detached => return null,
             }
-        }
-
-        /// Get the local address of a socket in text format.
-        ///
-        /// # Arguments
-        /// - `buf`: A buffer to store the text address data.
-        /// - `is_ipv6`: A pointer to a boolean representing whether the address is IPv6.
-        ///
-        /// # Returns
-        /// This function returns a slice of the buffer on success, or null on failure.
-        pub fn localAddressText(this: ThisSocket, buf: []u8, is_ipv6: *bool) ?[]const u8 {
-            const addr_v4_len = @sizeOf(@FieldType(std.posix.sockaddr.in, "addr"));
-            const addr_v6_len = @sizeOf(@FieldType(std.posix.sockaddr.in6, "addr"));
-
-            var sa_buf: [addr_v6_len + 1]u8 = undefined;
-            const binary = this.localAddressBinary(&sa_buf) orelse return null;
-            const addr_len: usize = binary.len;
-            sa_buf[addr_len] = 0;
-
-            var ret: ?[*:0]const u8 = null;
-            if (addr_len == addr_v4_len) {
-                ret = bun.c_ares.ares_inet_ntop(std.posix.AF.INET, &sa_buf, buf.ptr, @as(u32, @intCast(buf.len)));
-                is_ipv6.* = false;
-            } else if (addr_len == addr_v6_len) {
-                ret = bun.c_ares.ares_inet_ntop(std.posix.AF.INET6, &sa_buf, buf.ptr, @as(u32, @intCast(buf.len)));
-                is_ipv6.* = true;
-            }
-
-            if (ret) |_| {
-                const length: usize = @intCast(bun.len(bun.cast([*:0]u8, buf)));
-                return buf[0..length];
-            }
-            return null;
         }
 
         pub fn connect(
@@ -4527,6 +4496,7 @@ pub const udp = struct {
             return us_udp_socket_bind(this, hostname, port);
         }
 
+        /// Get the bound port in host byte order
         pub fn boundPort(this: *This) c_int {
             return us_udp_socket_bound_port(this);
         }
