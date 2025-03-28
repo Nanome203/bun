@@ -1,5 +1,5 @@
 #include "JSHmac.h"
-#include "util.h"
+#include "CryptoUtil.h"
 #include "BunClientData.h"
 #include <JavaScriptCore/ArrayBuffer.h>
 #include <JavaScriptCore/Error.h>
@@ -21,12 +21,17 @@ static const HashTableValue JSHmacPrototypeTableValues[] = {
 };
 
 const ClassInfo JSHmac::s_info = { "Hmac"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSHmac) };
-const ClassInfo JSHmacPrototype::s_info = { "HmacPrototype"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSHmacPrototype) };
-const ClassInfo JSHmacConstructor::s_info = { "HmacConstructor"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSHmacConstructor) };
+const ClassInfo JSHmacPrototype::s_info = { "Hmac"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSHmacPrototype) };
+const ClassInfo JSHmacConstructor::s_info = { "Hmac"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSHmacConstructor) };
 
 JSHmac::JSHmac(JSC::VM& vm, JSC::Structure* structure)
     : Base(vm, structure)
 {
+}
+
+void JSHmac::destroy(JSC::JSCell* cell)
+{
+    static_cast<JSHmac*>(cell)->~JSHmac();
 }
 
 JSHmac::~JSHmac()
@@ -134,7 +139,10 @@ JSC_DEFINE_HOST_FUNCTION(jsHmacProtoFuncUpdate, (JSC::JSGlobalObject * globalObj
             return Bun::ERR::INVALID_ARG_VALUE(scope, globalObject, "encoding"_s, encodingValue, makeString("is invalid for data of length "_s, inputString->length()));
         }
 
-        JSValue converted = JSValue::decode(WebCore::constructFromEncoding(globalObject, inputString, encoding));
+        WTF::StringView inputView = inputString->view(globalObject);
+        RETURN_IF_EXCEPTION(scope, {});
+
+        JSValue converted = JSValue::decode(WebCore::constructFromEncoding(globalObject, inputView, encoding));
         RETURN_IF_EXCEPTION(scope, {});
 
         auto* convertedView = jsDynamicCast<JSC::JSArrayBufferView*>(converted);

@@ -13,7 +13,7 @@
 #include "AsymmetricKeyValue.h"
 #include "NodeValidator.h"
 #include "JSBuffer.h"
-#include "util.h"
+#include "CryptoUtil.h"
 #include "BunString.h"
 #include "JSVerify.h"
 #include "CryptoAlgorithmRegistry.h"
@@ -44,6 +44,17 @@ static const JSC::HashTableValue JSSignPrototypeTableValues[] = {
 
 // JSSign implementation
 const JSC::ClassInfo JSSign::s_info = { "Sign"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSSign) };
+const JSC::ClassInfo JSSignPrototype::s_info = { "Sign"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSSignPrototype) };
+const JSC::ClassInfo JSSignConstructor::s_info = { "Sign"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSSignConstructor) };
+
+void JSSign::destroy(JSC::JSCell* cell)
+{
+    static_cast<JSSign*>(cell)->~JSSign();
+}
+
+JSSign::~JSSign()
+{
+}
 
 JSSign::JSSign(JSC::VM& vm, JSC::Structure* structure)
     : Base(vm, structure)
@@ -81,7 +92,6 @@ JSC::GCClient::IsoSubspace* JSSign::subspaceFor(JSC::VM& vm)
 }
 
 // JSSignPrototype implementation
-const JSC::ClassInfo JSSignPrototype::s_info = { "Sign"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSSignPrototype) };
 
 JSSignPrototype::JSSignPrototype(JSC::VM& vm, JSC::Structure* structure)
     : Base(vm, structure)
@@ -110,7 +120,6 @@ JSC::Structure* JSSignPrototype::createStructure(JSC::VM& vm, JSC::JSGlobalObjec
 }
 
 // JSSignConstructor implementation
-const JSC::ClassInfo JSSignConstructor::s_info = { "Sign"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSSignConstructor) };
 
 JSSignConstructor::JSSignConstructor(JSC::VM& vm, JSC::Structure* structure)
     : Base(vm, structure, callSign, constructSign)
@@ -252,7 +261,10 @@ JSC_DEFINE_HOST_FUNCTION(jsSignProtoFuncUpdate, (JSC::JSGlobalObject * globalObj
             return Bun::ERR::INVALID_ARG_VALUE(scope, globalObject, "encoding"_s, encodingValue, makeString("is invalid for data of length "_s, dataString->length()));
         }
 
-        JSValue buf = JSValue::decode(constructFromEncoding(globalObject, dataString, encoding));
+        auto dataView = dataString->view(globalObject);
+        RETURN_IF_EXCEPTION(scope, {});
+
+        JSValue buf = JSValue::decode(constructFromEncoding(globalObject, dataView, encoding));
         RETURN_IF_EXCEPTION(scope, JSValue::encode({}));
 
         auto* view = jsDynamicCast<JSC::JSArrayBufferView*>(buf);
@@ -434,7 +446,7 @@ JSC_DEFINE_HOST_FUNCTION(jsSignProtoFuncSign, (JSC::JSGlobalObject * lexicalGlob
 
     // If output encoding is not buffer, convert the signature to the requested encoding
     if (outputEncoding != BufferEncodingType::buffer) {
-        EncodedJSValue encodedSignature = jsBufferToString(vm, lexicalGlobalObject, signature, 0, signature->byteLength(), outputEncoding);
+        EncodedJSValue encodedSignature = jsBufferToString(lexicalGlobalObject, scope, signature, 0, signature->byteLength(), outputEncoding);
         RETURN_IF_EXCEPTION(scope, {});
         return encodedSignature;
     }

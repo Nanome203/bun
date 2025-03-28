@@ -4,7 +4,7 @@
 #include "JSBuffer.h"
 #include "helpers.h"
 #include "ncrypto.h"
-#include "util.h"
+#include "CryptoUtil.h"
 #include <JavaScriptCore/LazyProperty.h>
 #include <JavaScriptCore/LazyPropertyInlines.h>
 
@@ -23,6 +23,9 @@ public:
 
     static JSSign* create(JSC::VM& vm, JSC::Structure* structure);
     static JSC::Structure* createStructure(JSC::VM& vm, JSC::JSGlobalObject* globalObject, JSC::JSValue prototype);
+
+    static void destroy(JSC::JSCell* cell);
+    ~JSSign();
 
     template<typename CellType, JSC::SubspaceAccess mode>
     static JSC::GCClient::IsoSubspace* subspaceFor(JSC::VM& vm);
